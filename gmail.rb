@@ -9,17 +9,15 @@ require 'pry'
 
 class Gmail
 
-  def initialize
-
-    options = {
+  def initialize(
       app_name: 'Gmail API Ruby Quickstart',
       secrets_path: File.join('config', 'client_secret.json'),
       credentials_path: File.join('config', '.credentials', "gmail-ruby-quickstart.json"),
       scope: 'https://www.googleapis.com/auth/gmail.readonly'
-    }
+    )
 
-    @client = Google::APIClient.new(application_name: options[:app_name])
-    @client.authorization = authorize(options)
+    @client = Google::APIClient.new(application_name: app_name)
+    @client.authorization = authorize(credentials_path, secrets_path, scope)
 
     # Initialize the API
     @gmail_api = @client.discovered_api('gmail', 'v1')
@@ -31,10 +29,7 @@ class Gmail
   # files or intitiating an OAuth2 authorization request via InstalledAppFlow.
   # If authorization is required, the user's default browser will be launched
   # to approve the request.
-  def authorize(options)
-    credentials_path = options[:credentials_path]
-    secrets_path = options[:secrets_path]
-    scope = options[:scope]
+  def authorize(credentials_path, secrets_path, scope)
 
     FileUtils.mkdir_p(File.dirname(credentials_path))
 
