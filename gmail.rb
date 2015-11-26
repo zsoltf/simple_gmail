@@ -10,10 +10,10 @@ require 'pry'
 class Gmail
 
   def initialize(
-      app_name: 'Gmail API Ruby Quickstart',
+      app_name: 'Gmail API Ruby QuickStart',
       secrets_path: File.join('config', 'client_secret.json'),
       credentials_path: File.join('config', '.credentials', "gmail-ruby-quickstart.json"),
-      scope: 'https://www.googleapis.com/auth/gmail.readonly'
+      scope: 'https://www.googleapis.com/auth/gmail.modify'
     )
 
     @client = Google::APIClient.new(application_name: app_name)
@@ -56,7 +56,9 @@ class Gmail
       :api_method => @gmail_api.users.labels.list,
       :parameters => { :userId => 'me' })
 
-    results.data.labels.map(&:name)
+    results.data.labels.map do |label|
+      { id: label.id, name: label.name }
+    end
 
   end
 
@@ -66,7 +68,7 @@ class Gmail
       api_method: @gmail_api.users.messages.list,
       parameters: { userId: 'me',
                     q: query,
-                    maxResults: max
+                    maxResults: max,
                   })
 
     results.data.messages.map do |message|
@@ -74,10 +76,10 @@ class Gmail
       response = @client.execute!(
         api_method: @gmail_api.users.messages.get,
         parameters: { userId: 'me', id: message["id"]}
-      ).data.payload
+      )
 
       headers = {}
-      response.headers.each do |header|
+      response.data.payload.headers.each do |header|
         case header.name
         when "From"
           headers[:from] = header.value
@@ -88,10 +90,65 @@ class Gmail
         end
       end
 
-      { headers: headers, body: response.body.data }
+      # look for html body in the payload
+      payload = response.data.payload
+      data = if payload.parts.count == 1
+               payload.parts.first.parts.find { |part| part.mimeType == "text/html"}
+             elsif payload.parts.count == 2
+               payload.parts.find { |part| part.mimeType == "text/html"}
+             end
+
+      # manually decode message from JSON data, since client uses wrong encoding
+      html = if data
+               json = JSON.parse(data.to_json)["body"]["data"]
+               Base64.urlsafe_decode64(json)
+             end
+
+      # return basic headers, body and labels
+      {
+        id: message["id"],
+        headers: headers,
+        snippet: response.data.snippet,
+        body: response.data.payload.body.data,
+        html_body: html,
+        label_ids: response.data.labelIds
+      }
 
     end
 
+  end
+
+  def add_label(msg_id, label)
+
+    label_id = get_label_id(label)
+
+    @client.execute!(
+      api_method: @gmail_api.users.messages.modify,
+      parameters: { userId: 'me', id: msg_id },
+      body_object: { addLabelIds: [label_id] }
+    )
+
+  end
+
+  def remove_label(msg_id, label)
+
+    label_id = get_label_id(label)
+
+    @client.execute!(
+      api_method: @gmail_api.users.messages.modify,
+      parameters: { userId: 'me', id: msg_id },
+      body_object: { removeLabelIds: [label_id] }
+    )
+
+  end
+
+  def get_label_id(label)
+    result = labels.find { |l| l[:name] == label }
+    if result
+      return result[:id]
+    else
+      raise "Label not found"
+    end
   end
 
 end
@@ -99,6 +156,6 @@ end
 
 mail = Gmail.new
 
-binding.pry
 #puts mail.labels
+#mail.remove_label(mail.messages.first[:id], "UNREAD")
 puts mail.messages
